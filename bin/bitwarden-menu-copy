@@ -1,0 +1,58 @@
+#!/bin/bash
+# Zavolá se z gen-bitwarden-item-<id>.toml (action = "bitwarden-menu-copy <id> %VALUE%").
+set -euo pipefail
+
+id="$1"
+field="$2"
+
+case "$field" in
+    password)
+        password=$(rbw get "$id" 2>/dev/null) || { notify-send "Bitwarden" "Nepodařilo se načíst heslo"; exit 1; }
+        printf '%s' "$password" | wl-copy --sensitive --
+        notify-send "Bitwarden" "Heslo zkopírováno (schránka se vyčistí za 45s)"
+        (
+            sleep 45
+            current=$(wl-paste 2>/dev/null || true)
+            [[ "$current" == "$password" ]] && wl-copy --clear
+        ) &
+        disown
+        ;;
+    username)
+        user=$(rbw get -f username "$id" 2>/dev/null || true)
+        if [[ -z "$user" ]]; then
+            notify-send "Bitwarden" "Tato položka nemá username"
+        else
+            printf '%s' "$user" | wl-copy
+            notify-send "Bitwarden" "Username zkopírován"
+        fi
+        ;;
+    totp)
+        if code=$(rbw code "$id" 2>/dev/null); then
+            printf '%s' "$code" | wl-copy
+            notify-send "Bitwarden" "TOTP kód zkopírován"
+        else
+            notify-send "Bitwarden" "Tato položka nemá TOTP"
+        fi
+        ;;
+    edit)
+        foot -e rbw edit "$id"
+        ~/.local/bin/bitwarden-generate-menus
+        systemctl --user restart elephant.service
+        notify-send "Bitwarden" "Položka upravena"
+        ;;
+    delete)
+        name=$(rbw list --fields id,name --raw 2>/dev/null | jq -r --arg id "$id" '.[] | select(.id==$id) | .name')
+        confirm=$(printf 'Zrušit\nSmazat "%s"\n' "$name" | walker -d -p "Opravdu smazat?") || confirm=""
+        if [[ "$confirm" == "Smazat \"$name\"" ]]; then
+            if rbw remove "$id" 2>/dev/null; then
+                notify-send "Bitwarden" "Položka '$name' smazána"
+                ~/.local/bin/bitwarden-generate-menus
+                systemctl --user restart elephant.service
+            else
+                notify-send "Bitwarden" "Smazání selhalo"
+            fi
+        else
+            notify-send "Bitwarden" "Smazání zrušeno"
+        fi
+        ;;
+esac

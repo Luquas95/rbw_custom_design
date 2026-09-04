@@ -1,0 +1,30 @@
+#!/bin/bash
+# pinentry-gtk pod Sway/wlroots dělá globální X11 grab klávesnice/myši
+# (přes XWayland), který se sekáváním "could not grab keyboard: already
+# grabbed" / "it took 4097 tries to grab the pointer" a odemykání rbw
+# selhává ("pinentry cancelled"). --no-global-grab grabuje jen dokud je
+# okno focusnuté, což se Sway nebije.
+#
+# rbw-agent navíc vždy volá pinentry s "--display :1" (z DISPLAY, co mělo
+# rbw-agent při startu). To donutí GTK připojit se přes XWayland místo
+# nativního Wayland backendu a okno se pak vůbec nenamapuje (ověřeno: bez
+# --display okno naskočí, s ním ne, nezávisle na --timeout). Proto ten
+# flag tady odfiltrujeme a necháme GDK zvolit Wayland samo.
+set -euo pipefail
+args=()
+skip_next=false
+for arg in "$@"; do
+    if $skip_next; then
+        skip_next=false
+        continue
+    fi
+    case "$arg" in
+        -D|--display) skip_next=true ;;
+        -D*|--display=*) ;;
+        *) args+=("$arg") ;;
+    esac
+done
+
+export GDK_BACKEND=wayland
+export GTK_THEME=pinentry-green
+exec pinentry-gtk --no-global-grab "${args[@]}"

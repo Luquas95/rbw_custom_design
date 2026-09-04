@@ -1,0 +1,5 @@
+#!/bin/bash
+# Slouží jako $EDITOR pro `rbw add`, aby šlo zadat vlastní heslo přes walker
+# místo otevírání skutečného textového editoru - `rbw add` tento skript
+# spustí jako "editor" nad dočasným souborem a první řádek vezme jako heslo.
+printf '%s\n' "$BW_CUSTOM_PASSWORD" > "$1"

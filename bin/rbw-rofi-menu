@@ -1,0 +1,180 @@
+#!/bin/bash
+# Rofi script-mode frontend pro rbw (Bitwarden CLI) - hledání položek, složky, akce, generátor, přidání.
+set -euo pipefail
+
+SEP=$'\x1e'
+INFO="${ROFI_INFO:-}"
+
+row() {
+    local text="$1" info="$2" icon="${3:-}"
+    if [[ -n "$icon" ]]; then
+        printf '%s\0info\x1f%s\x1ficon\x1f%s\n' "$text" "$info" "$icon"
+    else
+        printf '%s\0info\x1f%s\n' "$text" "$info"
+    fi
+}
+
+row_meta() {
+    local text="$1" info="$2" icon="$3" meta="$4"
+    printf '%s\0info\x1f%s\x1ficon\x1f%s\x1fmeta\x1f%s\n' "$text" "$info" "$icon" "$meta"
+}
+
+list_items() {
+    # $1 = folder name nebo __ALL__, $2 = info řetězec rodiče (kam se vrátit přes "Zpět")
+    local folder="$1" parent="$2"
+    local filter
+    if [[ "$folder" == "__ALL__" ]]; then
+        filter='.[]'
+    elif [[ "$folder" == "__NONE__" ]]; then
+        filter='.[] | select((.folder // "") == "")'
+    else
+        filter=".[] | select((.folder // \"\" | gsub(\"^\\\\s+|\\\\s+\$\";\"\")) == \$f)"
+    fi
+    rbw list --fields id,name,user,folder --raw 2>/dev/null \
+        | jq -r --arg f "$folder" "[$filter] | .[] | \"\(.id)\t\(.name)\t\(.user // \"\")\t\(.folder // \"\")\"" \
+        | while IFS=$'\t' read -r id name user ifolder; do
+            local label="$name"
+            [[ -n "$user" ]] && label="$name — $user"
+            if [[ "$folder" == "__ALL__" && -n "$ifolder" ]]; then
+                label="$label  [$ifolder]"
+            fi
+            row "  $label" "ITEM${SEP}${id}${SEP}${parent}"
+        done
+}
+
+show_root() {
+    printf '\0prompt\x1fBitwarden\n'
+    row "  Synchronizovat" "SYNC"
+    row "  Generovat heslo" "GEN"
+    row "  Přidat novou položku" "ADD"
+
+    local raw
+    raw=$(rbw list --fields name,user,folder --raw 2>/dev/null)
+
+    # Root menu ukazuje jen složky, ale meta obsahuje jména+usery všech
+    # položek uvnitř - rofi filtruje i podle meta, takže psaní najde
+    # správnou složku podle obsahu i bez zobrazení položek samotných.
+    while IFS=$'\t' read -r folder meta; do
+        [[ -z "$folder" ]] && continue
+        row_meta " $folder" "FOLDER${SEP}${folder}" "folder" "$meta"
+    done < <(printf '%s' "$raw" | jq -r '
+        group_by((.folder // "") | gsub("^\\s+|\\s+$";""))
+        | .[]
+        | select((.[0].folder // "") != "")
+        | [(.[0].folder | gsub("^\\s+|\\s+$";"")), ([.[] | "\(.name) \(.user // "")"] | join(" "))]
+        | @tsv
+    ')
+
+    local none_meta
+    none_meta=$(printf '%s' "$raw" | jq -r '[.[] | select((.folder // "") == "") | "\(.name) \(.user // "")"] | join(" ")')
+    if [[ -n "$none_meta" ]]; then
+        row_meta " No Folder" "FOLDER${SEP}__NONE__" "folder" "$none_meta"
+    fi
+
+    row "  Všechny položky" "FOLDER${SEP}__ALL__" "folder"
+}
+
+show_folder() {
+    local folder="$1"
+    row "←  Zpět" "ROOT"
+    list_items "$folder" "FOLDER${SEP}${folder}"
+}
+
+show_item() {
+    local id="$1" parent="$2"
+    row "←  Zpět" "$parent"
+    row "  Kopírovat username" "DO${SEP}user${SEP}${id}"
+    row "  Kopírovat heslo" "DO${SEP}pass${SEP}${id}"
+    row "  Kopírovat TOTP" "DO${SEP}totp${SEP}${id}"
+    row "  Smazat položku" "DELCONFIRM${SEP}${id}"
+}
+
+clear_clipboard_later() {
+    local expected="$1"
+    ( sleep 45
+      current=$(wl-paste 2>/dev/null || true)
+      [[ "$current" == "$expected" ]] && wl-copy --clear ) &
+    disown
+}
+
+do_action() {
+    local field="$1" id="$2"
+    case "$field" in
+        user)
+            local u
+            u=$(rbw get -f username "$id" 2>/dev/null || true)
+            if [[ -z "$u" ]]; then
+                notify-send "Bitwarden" "Tato položka nemá username"
+            else
+                printf '%s' "$u" | wl-copy
+                notify-send "Bitwarden" "Username zkopírován"
+            fi
+            ;;
+        pass)
+            local p
+            p=$(rbw get "$id" 2>/dev/null || true)
+            printf '%s' "$p" | wl-copy
+            notify-send "Bitwarden" "Heslo zkopírováno (schránka se vyčistí za 45s)"
+            clear_clipboard_later "$p"
+            ;;
+        totp)
+            local t
+            if t=$(rbw code "$id" 2>/dev/null); then
+                printf '%s' "$t" | wl-copy
+                notify-send "Bitwarden" "TOTP kód zkopírován"
+            else
+                notify-send "Bitwarden" "Tato položka nemá TOTP"
+            fi
+            ;;
+    esac
+}
+
+if [[ -z "$INFO" ]]; then
+    show_root
+    exit 0
+fi
+
+IFS="$SEP" read -r kind a b <<< "$INFO"
+
+case "$kind" in
+    ROOT) show_root ;;
+    FOLDER) show_folder "$a" ;;
+    ITEM) show_item "$a" "$b" ;;
+    GEN)
+        pkill -x rofi || true
+        "$HOME/.local/bin/bitwarden-generate" &
+        disown
+        ;;
+    ADD)
+        pkill -x rofi || true
+        "$HOME/.local/bin/bitwarden-add" &
+        disown
+        ;;
+    DO)
+        do_action "$a" "$b"
+        pkill -x rofi || true
+        ;;
+    SYNC)
+        rbw sync >/dev/null 2>&1 || true
+        show_root
+        ;;
+    DELCONFIRM)
+        pkill -x rofi || true
+        (
+            mon=$(hyprctl monitors -j | jq -r '.[] | select(.focused==true) | .name')
+            THEME="$HOME/.config/rofi/bitwarden.rasi"
+            name=$(rbw list --fields id,name --raw 2>/dev/null | jq -r --arg id "$a" '.[] | select(.id==$id) | .name')
+            confirm=$(printf 'Zrušit\nSmazat "%s"\n' "$name" | rofi -dmenu -p "Opravdu smazat?" -theme "$THEME" -m "$mon" </dev/null) || confirm=""
+            if [[ "$confirm" == "Smazat \"$name\"" ]]; then
+                if rbw remove "$a" 2>/dev/null; then
+                    notify-send "Bitwarden" "Položka '$name' smazána"
+                else
+                    notify-send "Bitwarden" "Smazání selhalo"
+                fi
+            else
+                notify-send "Bitwarden" "Smazání zrušeno"
+            fi
+        ) &
+        disown
+        ;;
+esac

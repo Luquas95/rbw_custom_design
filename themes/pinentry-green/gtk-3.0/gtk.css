@@ -1,0 +1,46 @@
+/* Samostatné téma jen pro pinentry-gtk (viz ~/.local/bin/pinentry-rbw,
+   GTK_THEME=pinentry-green) - přebírá stejný černo-zelený vzhled jako
+   globální ~/.config/gtk-3.0/gtk.css (window/dialog pravidlo), ale
+   nesahá na globální soubor, aby se zelená vynutila jen v tomhle okně,
+   ne v selection/focus barvách všech GTK3 aplikací v systému.
+   Adwaita-dark kreslí focus ring vstupního pole natvrdo modrou
+   (box-shadow #15539e), ne přes @theme_selected_bg_color proměnnou -
+   proto obecné "border-color" pravidlo (stejné jako v globálním css)
+   tenhle konkrétní prvek netrefí a je potřeba přepsat zvlášť. */
+@import url("resource:///org/gtk/libgtk/theme/Adwaita/gtk-contained-dark.css");
+
+window,
+window *,
+dialog,
+dialog * {
+  color: #00aa00;
+  border-color: #00aa00;
+  background-color: #000000;
+  background-image: none;
+}
+
+entry:focus,
+spinbutton:focus:not(.vertical) {
+  box-shadow: inset 0 0 0 1px #00ff99;
+  border-color: #00aa00;
+}
+
+entry selection,
+label selection,
+textview text selection {
+  background-color: #00aa00;
+  color: #000000;
+}
+
+button.suggested-action {
+  background-color: #00aa00;
+  background-image: none;
+  color: #000000;
+}
+button.suggested-action:hover {
+  background-color: #00cc00;
+  background-image: none;
+}
+button.suggested-action:focus {
+  box-shadow: inset 0 0 0 1px #00ff99;
+}

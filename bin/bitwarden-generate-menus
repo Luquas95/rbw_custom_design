@@ -1,0 +1,147 @@
+#!/bin/bash
+# Generuje elephant "menus" soubory pro idle pohled Bitwarden walker setu:
+# ~/.config/elephant/menus/gen-bitwarden-folders.toml (kořen: Sync/Generovat/Přidat napevno nahoře + složky)
+# + gen-bitwarden-folder-<slug>.toml na složku (položky, submenu na akce)
+# + gen-bitwarden-item-<id>.toml na položku (Kopírovat heslo/username/TOTP/Upravit/Smazat).
+# Volá se před každým otevřením walker -s bitwarden, aby seznam sedněl s aktuálním vaultem.
+set -euo pipefail
+
+MENU_DIR="$HOME/.config/elephant/menus"
+mkdir -p "$MENU_DIR"
+rm -f "$MENU_DIR"/gen-bitwarden-folders.toml "$MENU_DIR"/gen-bitwarden-folder-*.toml "$MENU_DIR"/gen-bitwarden-item-*.toml
+
+raw=$(rbw list --fields id,name,user,folder --raw 2>/dev/null)
+
+slug() {
+    iconv -t ascii//TRANSLIT <<< "$1" 2>/dev/null | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]'
+}
+
+write_item_actions_menu() {
+    local id="$1" label="$2" parent_menu="$3"
+    local menu_name="gen-bitwarden-item-$id"
+    {
+        echo "name = \"$menu_name\""
+        echo "name_pretty = \"$label\""
+        echo 'icon = "bitwarden"'
+        echo "parent = \"$parent_menu\""
+        echo "action = \"bitwarden-menu-copy $id %VALUE%\""
+        echo
+        echo '[[entries]]'
+        echo 'text = "Kopírovat heslo"'
+        echo 'icon = "bitwarden"'
+        echo 'value = "password"'
+        echo
+        echo '[[entries]]'
+        echo 'text = "Kopírovat uživatelské jméno"'
+        echo 'icon = "bitwarden"'
+        echo 'value = "username"'
+        echo
+        echo '[[entries]]'
+        echo 'text = "Kopírovat TOTP"'
+        echo 'icon = "bitwarden"'
+        echo 'value = "totp"'
+        echo
+        echo '[[entries]]'
+        echo 'text = "Upravit položku"'
+        echo 'icon = "document-edit"'
+        echo 'value = "edit"'
+        echo
+        echo '[[entries]]'
+        echo 'text = "Smazat položku"'
+        echo 'icon = "edit-delete"'
+        echo 'value = "delete"'
+    } > "$MENU_DIR/$menu_name.toml"
+}
+
+write_folder_file() {
+    local menu_name="$1" title="$2" body="$3"
+    {
+        echo "name = \"$menu_name\""
+        echo "name_pretty = \"$title\""
+        echo 'icon = "folder"'
+        echo 'parent = "bitwarden-folders"'
+        printf '%s\n' "$body"
+    } > "$MENU_DIR/$menu_name.toml"
+}
+
+declare -A folder_body folder_slug
+NOFOLDER_KEY="__nofolder__"
+
+# Nastaví FOLDER_MENU_NAME pro danou složku; slug (fork iconv) počítá jen jednou na složku.
+folder_menu_name() {
+    local folder="$1"
+    if [[ -z "$folder" ]]; then
+        FOLDER_MENU_NAME="gen-bitwarden-folder-nofolder"
+        return
+    fi
+    if [[ -z "${folder_slug[$folder]+x}" ]]; then
+        folder_slug["$folder"]=$(slug "$folder")
+    fi
+    FOLDER_MENU_NAME="gen-bitwarden-folder-${folder_slug[$folder]}"
+}
+
+# Jediný průchod jq přes celý vault (místo dřívějšího zvláštního jq volání na každou složku).
+# Bash 5.3 nepovoluje "" jako klíč asociativního pole, proto se u položek bez složky
+# místo prázdného řetězce používá NOFOLDER_KEY.
+# Pozor: oddělovač NESMÍ být tabulátor/mezera — bashový `read` v "IFS whitespace" režimu
+# slučuje a ořezává prázdná pole (empty .folder by posunul id/name/user o pozici doleva),
+# proto se pole spojují \x1f (unit separator), který se v reálném textu nevyskytuje.
+while IFS=$'\x1f' read -r folder id name user; do
+    label="$name"
+    [[ -n "$user" ]] && label="$name — $user"
+    folder_menu_name "$folder"
+    bkey="$folder"
+    [[ -z "$bkey" ]] && bkey="$NOFOLDER_KEY"
+    folder_body["$bkey"]+=$(printf '\n[[entries]]\ntext = "%s"\nicon = "bitwarden"\nsubmenu = "gen-bitwarden-item-%s"\n' "$label" "$id")
+    write_item_actions_menu "$id" "$label" "$FOLDER_MENU_NAME"
+done < <(printf '%s' "$raw" | jq -r '.[] | [(.folder // "" | gsub("^\\s+|\\s+$";"")), .id, .name, (.user // "")] | join("")')
+
+{
+    echo 'name = "bitwarden-folders"'
+    echo 'name_pretty = "Bitwarden"'
+    echo 'icon = "bitwarden"'
+    echo 'action = "%VALUE%"'
+    echo 'fixed_order = true'
+    echo
+    echo '[[entries]]'
+    echo 'text = "Synchronizovat"'
+    echo 'icon = "view-refresh"'
+    echo 'value = "bitwarden-sync"'
+    echo
+    echo '[[entries]]'
+    echo 'text = "Generovat heslo"'
+    echo 'icon = "bitwarden"'
+    echo 'value = "bitwarden-generate"'
+    echo
+    echo '[[entries]]'
+    echo 'text = "Přidat novou položku"'
+    echo 'icon = "list-add"'
+    echo 'value = "bitwarden-add"'
+
+    mapfile -t sorted_folders < <(printf '%s\n' "${!folder_body[@]}" | grep -Fxv "$NOFOLDER_KEY" | sort)
+    for folder in "${sorted_folders[@]}"; do
+        folder_menu_name "$folder"
+        echo
+        echo '[[entries]]'
+        echo "text = \"$folder\""
+        echo 'icon = "folder"'
+        echo "submenu = \"$FOLDER_MENU_NAME\""
+    done
+
+    if [[ -n "${folder_body[$NOFOLDER_KEY]+x}" ]]; then
+        echo
+        echo '[[entries]]'
+        echo 'text = "No Folder"'
+        echo 'icon = "folder"'
+        echo 'submenu = "gen-bitwarden-folder-nofolder"'
+    fi
+} > "$MENU_DIR/gen-bitwarden-folders.toml"
+
+for folder in "${sorted_folders[@]}"; do
+    folder_menu_name "$folder"
+    write_folder_file "$FOLDER_MENU_NAME" "$folder" "${folder_body[$folder]}"
+done
+
+if [[ -n "${folder_body[$NOFOLDER_KEY]+x}" ]]; then
+    write_folder_file "gen-bitwarden-folder-nofolder" "No Folder" "${folder_body[$NOFOLDER_KEY]}"
+fi

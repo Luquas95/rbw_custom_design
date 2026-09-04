@@ -1,0 +1,14 @@
+#!/bin/bash
+# Vygeneruje heslo podle zvolených parametrů (délka, sada znaků) a zkopíruje do schránky.
+set -euo pipefail
+
+source "$HOME/.local/bin/.bitwarden-lib.sh"
+
+bw_prompt_generate_args || exit 0
+
+if password=$(rbw generate "${BW_GEN_ARGS[@]}" 2>&1 </dev/null); then
+    printf '%s' "$password" | wl-copy
+    notify-send "Bitwarden" "Nové heslo zkopírováno do schránky"
+else
+    notify-send "Bitwarden" "Generování hesla selhalo: $password"
+fi

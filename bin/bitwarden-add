@@ -1,0 +1,57 @@
+#!/bin/bash
+# Průvodce přidáním nové položky do Bitwardenu (název, username, složka, heslo -
+# vygenerované, nebo vlastní zadané ručně).
+set -euo pipefail
+
+source "$HOME/.local/bin/.bitwarden-lib.sh"
+
+name=$(bw_ask "Název položky:") || { exit 0; }
+if [[ -z "$name" ]]; then
+    notify-send "Bitwarden" "Zrušeno - chybí název položky"
+    exit 0
+fi
+
+user=$(bw_ask "Uživatelské jméno (nepovinné):") || user=""
+
+folders=$(rbw list --fields folder --raw 2>/dev/null | jq -r '[.[].folder | select(. != null) | gsub("^\\s+|\\s+$";"")] | unique | .[]')
+folder=$(printf '%s\n' "$folders" | bw_choose "Složka (nepovinné, nebo napiš novou):") || folder=""
+
+method=$(printf 'Vygenerovat heslo\nZadat vlastní heslo\n' | bw_choose "Heslo:") || { notify-send "Bitwarden" "Zrušeno"; exit 0; }
+
+rbw_args=("$name")
+[[ -n "$user" ]] && rbw_args+=("$user")
+[[ -n "$folder" ]] && rbw_args+=(--folder "$folder")
+
+if [[ "$method" == "Zadat vlastní heslo" ]]; then
+    pass1=$(bw_ask_password "Heslo:") || { notify-send "Bitwarden" "Zrušeno"; exit 0; }
+    if [[ -z "$pass1" ]]; then
+        notify-send "Bitwarden" "Zrušeno - prázdné heslo"
+        exit 0
+    fi
+    pass2=$(bw_ask_password "Heslo znovu:") || { notify-send "Bitwarden" "Zrušeno"; exit 0; }
+    if [[ "$pass1" != "$pass2" ]]; then
+        notify-send "Bitwarden" "Hesla se neshodují, zrušeno"
+        exit 0
+    fi
+
+    if err=$(BW_CUSTOM_PASSWORD="$pass1" EDITOR="$HOME/.local/bin/.bitwarden-editor-fill" rbw add "${rbw_args[@]}" 2>&1 </dev/null); then
+        printf '%s' "$pass1" | wl-copy
+        notify-send "Bitwarden" "Položka '$name' vytvořena, heslo zkopírováno do schránky"
+        ~/.local/bin/bitwarden-generate-menus
+        systemctl --user restart elephant.service
+    else
+        notify-send "Bitwarden" "Vytvoření položky selhalo: $err"
+    fi
+    unset pass1 pass2 BW_CUSTOM_PASSWORD
+else
+    bw_prompt_generate_args || { notify-send "Bitwarden" "Zrušeno"; exit 0; }
+
+    if password=$(rbw generate "${BW_GEN_ARGS[@]}" "${rbw_args[@]}" 2>&1 </dev/null); then
+        printf '%s' "$password" | wl-copy
+        notify-send "Bitwarden" "Položka '$name' vytvořena, heslo zkopírováno do schránky"
+        ~/.local/bin/bitwarden-generate-menus
+        systemctl --user restart elephant.service
+    else
+        notify-send "Bitwarden" "Vytvoření položky selhalo: $password"
+    fi
+fi
