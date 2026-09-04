@@ -1,107 +1,116 @@
 # rbw_custom_design
 
-Vlastní Bitwarden menu nad [`rbw`](https://github.com/doy/rbw) (neoficiální Bitwarden
-CLI) pro Sway/wlroots, postavené na [`walker`](https://github.com/abenz1267/walker) +
-[`elephant`](https://github.com/abenz1267/elephant) (`elephant-bitwarden` provider),
-s černo-zeleným "retro" vzhledem.
+A custom Bitwarden menu built on top of [`rbw`](https://github.com/doy/rbw) (the
+unofficial Bitwarden CLI) for Sway/wlroots, using
+[`walker`](https://github.com/abenz1267/walker) +
+[`elephant`](https://github.com/abenz1267/elephant) (the `elephant-bitwarden`
+provider), with a black-and-green "retro" look.
 
-Klávesová zkratka otevře plovoucí okno se seznamem složek a živým fulltextovým
-hledáním přes celý vault; z položky lze zkopírovat heslo/username/TOTP,
-upravit ji nebo smazat. `rbw` zůstává jediným zdrojem pravdy (vault, sync,
-zamykání) — tenhle repo je jen UI vrstva nad ním.
+A keybinding opens a floating window listing folders, with live fuzzy search
+across the whole vault; from an entry you can copy the password/username/TOTP,
+edit it, or delete it. `rbw` stays the single source of truth (vault, sync,
+locking) — this repo is just a UI layer on top of it.
 
-## Architektura
+![Screenshot of the menu (folder view, fake demo data)](docs/screenshot.png)
+
+## Architecture
 
 ```
 $mod+b (Sway)
   -> bin/bitwarden-launcher
-       -> bin/bitwarden-generate-menus   (rbw list --raw -> TOML menu soubory pro elephant)
-       -> systemctl --user restart elephant.service   (viz "Known issues" níže)
+       -> bin/bitwarden-generate-menus   (rbw list --raw -> TOML menu files for elephant)
+       -> systemctl --user restart elephant.service   (see "Known issues" below)
        -> walker -s bitwarden
-            - prázdné pole   = statické menu (foldery, generované výše)
-            - psaní do pole  = živé hledání přes elephant-bitwarden provider
+            - empty field  = static menu (folders, generated above)
+            - typing       = live search via the elephant-bitwarden provider
 ```
 
-Akce nad položkou (kopírovat heslo/username/TOTP, upravit, smazat) volají
-`bin/bitwarden-menu-copy <id> <akce>`, které dělá přímé `rbw get`/`rbw code`/
-`rbw remove` volání a heslo posílá do schránky přes `wl-copy` (s automatickým
-smazáním schránky po 45s u hesel).
+Actions on an entry (copy password/username/TOTP, edit, delete) call
+`bin/bitwarden-menu-copy <id> <action>`, which does a direct `rbw get`/
+`rbw code`/`rbw remove` call and sends the password to the clipboard via
+`wl-copy` (auto-clearing the clipboard after 45s for passwords).
 
-`bin/rbw-rofi-menu` je starší alternativní frontend (rofi script-mode místo
-walkeru) — funkční, ale aktuálně na nic nenavázaný (žádný keybinding ho
-nevolá). Ponecháno pro referenci/kompletnost.
+`bin/rbw-rofi-menu` is an older alternative frontend (rofi script-mode
+instead of walker) — functional, but currently not wired to any keybinding.
+Kept for reference/completeness.
 
-## Závislosti
+## Dependencies
 
 - `rbw` (Bitwarden CLI) + `pinentry-gtk`
-- `walker` + `elephant` (`elephant.service` jako `systemctl --user` služba)
-  + AUR balíček `elephant-bitwarden` (poskytuje `bitwarden` provider)
+- `walker` + `elephant` (`elephant.service` as a `systemctl --user` service)
+  + the AUR package `elephant-bitwarden` (provides the `bitwarden` provider)
 - `jq`, `wl-clipboard`, `iconv` (`glibc`)
-- Sway/wlroots (floating pravidlo v `sway/rbw-bitwarden.conf` je Sway-specifické)
+- Sway/wlroots (the floating rule in `sway/rbw-bitwarden.conf` is Sway-specific)
 
-## Instalace
+## Installation
 
-1. `bin/*` zkopírovat do `~/.local/bin/` (zachovat spustitelnost, `.bitwarden-lib.sh`
-   a `.bitwarden-editor-fill` musí zůstat se skrytou tečkou — sourcují se podle
-   přesného jména).
-2. `themes/pinentry-green/gtk-3.0/gtk.css` zkopírovat do
+1. Copy `bin/*` to `~/.local/bin/` (keep them executable; `.bitwarden-lib.sh`
+   and `.bitwarden-editor-fill` must keep their leading dot — they're sourced
+   by exact name).
+2. Copy `themes/pinentry-green/gtk-3.0/gtk.css` to
    `~/.themes/pinentry-green/gtk-3.0/gtk.css`.
-3. `sway/rbw-bitwarden.conf` přidat do `~/.config/sway/config` (include nebo
-   ručně zkopírovat obsah).
-4. `rbw/config.example.json` použít jako vzor pro `~/.config/rbw/config.json`
-   (doplnit vlastní e-mail; `"pinentry": "pinentry-rbw"` je klíčové — viz níže).
-5. `rbw config set email <tvůj e-mail>`, `rbw login`, `systemctl --user enable --now elephant.service`.
+3. Add `sway/rbw-bitwarden.conf` to `~/.config/sway/config` (include it or
+   copy its contents in manually).
+4. Use `rbw/config.example.json` as a template for `~/.config/rbw/config.json`
+   (fill in your own email; `"pinentry": "pinentry-rbw"` is the important
+   part — see below).
+5. `rbw config set email <your-email>`, `rbw login`,
+   `systemctl --user enable --now elephant.service`.
 
-## Known issues a proč jsou skripty takové, jaké jsou
+## Known issues, and why the scripts look the way they do
 
-Tři samostatné, na sobě nezávislé bugy, které se navenek projevovaly stejně
-("po odemčení rbw přestane fungovat vyhledávání/přihlášení"):
+Three independent bugs that all looked the same from the outside ("after
+unlocking rbw, search/login stops working"):
 
-### 1. `elephant-bitwarden` po auto-locku vrací natrvalo 0 výsledků
+### 1. `elephant-bitwarden` permanently returns 0 results after an auto-lock
 
-`elephant.service` běží trvale na pozadí a jeho `bitwarden` provider si drží
-vlastní spojení k `rbw-agent` navázané v okamžiku posledního zamčení vaultu.
-Po opětovném odemčení (`rbw` má `lock_timeout`) se toto spojení samo neobnoví —
-statické menu foldery fungují (generují se čerstvě přes `rbw list`), ale živé
-hledání trvale hlásí 0 výsledků, dokud se `elephant.service` neresetuje.
+`elephant.service` runs persistently in the background, and its `bitwarden`
+provider holds its own connection to `rbw-agent`, established at the moment
+the vault was last locked. After re-unlocking (`rbw` has a `lock_timeout`),
+this connection doesn't refresh itself — the static folder menu still works
+(it's regenerated fresh via `rbw list`), but live search permanently reports
+0 results until `elephant.service` is restarted.
 
-**Fix:** `bin/bitwarden-launcher` proto před `exec walker -s bitwarden` VŽDY
-(ne jen podmíněně) volá `systemctl --user restart elephant.service` — cena je
-~1-2s navíc při každém otevření, ale bezpodmínečnost je nutná, protože
-"bylo to zamčené" nejde spolehlivě detekovat (uživatel může `rbw unlock`
-spustit i mimo tenhle skript).
+**Fix:** `bin/bitwarden-launcher` therefore ALWAYS (not conditionally) calls
+`systemctl --user restart elephant.service` before `exec walker -s bitwarden`
+— the cost is ~1-2s extra on every open, but unconditional restart is
+necessary because "was it locked" can't be reliably detected (the user might
+run `rbw unlock` outside this script too).
 
-### 2. `pinentry-gtk` na Sway/wlroots neumí unlocknout vault
+### 2. `pinentry-gtk` can't unlock the vault on Sway/wlroots
 
-Dvě nezávislé příčiny, obě řeší `bin/pinentry-rbw` (wrapper, na který
-ukazuje `"pinentry"` v `rbw config.json`):
+Two independent causes, both fixed by `bin/pinentry-rbw` (the wrapper that
+`"pinentry"` in `rbw config.json` points to):
 
-- **Globální X11 grab.** `pinentry-gtk` defaultně dělá globální grab
-  klávesnice/myši (přes XWayland), který na wlroots compositorech koliduje
-  ("could not grab keyboard: already grabbed", "it took 4097 tries to grab
-  the pointer") a unlock skončí jako "pinentry cancelled". Řeší
-  `--no-global-grab` (grabuje jen dokud je okno fokusnuté).
+- **Global X11 grab.** `pinentry-gtk` grabs the keyboard/pointer globally by
+  default (via XWayland), which conflicts on wlroots compositors ("could not
+  grab keyboard: already grabbed", "it took 4097 tries to grab the pointer")
+  and the unlock ends up as "pinentry cancelled". Fixed with
+  `--no-global-grab` (grabs only while the window is focused).
 
-- **`rbw-agent` vždy posílá `--display :1`.** I s `--no-global-grab` selhávalo
-  mapování okna, pokud `rbw-agent` (zděděné `$DISPLAY` z vlastního startu)
-  poslalo pinentry explicitní `--display`, které vynutí GTK na X11/XWayland
-  backend místo nativního Wayland — okno se pak vůbec nenamapovalo (ověřeno
-  přímým porovnáním: se `--display` 0 namapovaných oken, bez něj vždy 1).
-  Wrapper tenhle flag odfiltruje a navíc explicitně nastaví
-  `GDK_BACKEND=wayland`.
+- **`rbw-agent` always passes `--display :1`.** Even with `--no-global-grab`,
+  window mapping still failed if `rbw-agent` (inheriting `$DISPLAY` from its
+  own startup) passed pinentry an explicit `--display`, forcing GTK onto the
+  X11/XWayland backend instead of native Wayland — the window then never
+  mapped at all (verified by direct comparison: 0 mapped windows with
+  `--display`, always 1 without it). The wrapper filters this flag out and
+  additionally sets `GDK_BACKEND=wayland` explicitly.
 
-### 3. Zelený vzhled (`themes/pinentry-green`)
+### 3. The green look (`themes/pinentry-green`)
 
-Adwaita-dark kreslí focus ring vstupního pole (`entry:focus`) natvrdo
-zakódovanou modrou (`box-shadow: ... #15539e`), ne přes motivovou proměnnou
-(`@theme_selected_bg_color`) — obecné černo-zelené `window`/`dialog` pravidlo
-(použité i jinde v systému) ho proto netrefí. Samostatné GTK téma
-(`GTK_THEME=pinentry-green`, nastavené ve `pinentry-rbw`) importuje base
-Adwaita-dark a přepisuje jen `entry:focus`/`selection`/`.suggested-action`,
-aniž by měnilo výběrovou barvu ve zbytku systému.
+Adwaita-dark draws the entry focus ring (`entry:focus`) with a hardcoded blue
+(`box-shadow: ... #15539e`), not through a theme variable
+(`@theme_selected_bg_color`) — so a generic black-and-green `window`/`dialog`
+override (used elsewhere on the system) doesn't catch it. A separate GTK
+theme (`GTK_THEME=pinentry-green`, set in `pinentry-rbw`) imports the base
+Adwaita-dark theme and overrides only `entry:focus`/`selection`/
+`.suggested-action`, without touching the selection color anywhere else on
+the system.
 
-## Co záměrně NENÍ v repu
+## What's deliberately NOT in this repo
 
-Vygenerované soubory `~/.config/elephant/menus/gen-bitwarden-*.toml`
-(obsahují reálné názvy položek/složek z vaultu) a `~/.config/rbw/config.json`
-se skutečným e-mailem — obojí je runtime/osobní stav, ne kód.
+The generated `~/.config/elephant/menus/gen-bitwarden-*.toml` files (contain
+real entry/folder names from the vault) and `~/.config/rbw/config.json` with
+a real email — both are runtime/personal state, not code. The screenshot
+above was captured with temporary fake menu data on an otherwise empty
+workspace for the same reason.
