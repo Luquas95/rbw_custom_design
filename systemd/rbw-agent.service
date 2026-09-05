@@ -1,0 +1,24 @@
+[Unit]
+# rbw-agent musí mít VLASTNÍ cgroup. Když se nechá auto-spustit implicitně
+# (`rbw list` si démona nahodí sám), zdědí cgroup toho, kdo ho spustil —
+# a protože první volání rbw dělá elephantův bitwarden plugin při startu,
+# skončil agent v cgroupu elephant.service. Ta má default KillMode=control-group,
+# takže KAŽDÝ `systemctl --user restart elephant.service` rbw-agenta zabil,
+# vault se tím zamkl a nový elephant hned vyvolal další pinentry dialog —
+# odemčení nemělo šanci přežít (ověřeno 2026-09-05: rbw-agent byl doslova
+# vypsaný jako child v `systemctl --user status elephant.service`).
+Description=rbw agent (Bitwarden)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+# rbw-agent argumenty ignoruje a vždy se sám démonizuje (double fork přes
+# daemonize crate) — proto forking, ne simple. Pidfile si drží sám
+# v $XDG_RUNTIME_DIR/rbw/pidfile a zamyká ho, takže druhá instance nenaběhne.
+Type=forking
+PIDFile=%t/rbw/pidfile
+ExecStart=/usr/bin/rbw-agent
+Restart=on-failure
+
+[Install]
+WantedBy=graphical-session.target

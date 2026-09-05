@@ -24,8 +24,9 @@ locking) — this repo is just a UI layer on top of it.
 ```
 $mod+b (Sway)
   -> bin/bitwarden-launcher
-       -> bin/bitwarden-generate-menus   (rbw list --raw -> TOML menu files for elephant)
-       -> systemctl --user restart elephant.service   (see "Known issues" below)
+       -> bin/bitwarden-generate-menus   (rbw unlock; rbw list --raw -> TOML menu
+                                          files for elephant; then restarts
+                                          elephant.service — see "Known issues")
        -> walker -s bitwarden
             - empty field  = static menu (folders, generated above)
             - typing       = live search via the elephant-bitwarden provider
@@ -60,15 +61,56 @@ Kept for reference/completeness.
 4. Use `rbw/config.example.json` as a template for `~/.config/rbw/config.json`
    (fill in your own email; `"pinentry": "pinentry-rbw"` is the important
    part — see below).
-5. `rbw config set email <your-email>`, `rbw login`,
-   `systemctl --user enable --now elephant.service`.
+5. Copy `systemd/rbw-agent.service` to `~/.config/systemd/user/` and
+   `systemd/elephant.service.d/rbw-agent.conf` to
+   `~/.config/systemd/user/elephant.service.d/`. **Don't skip this** — without
+   its own unit, `rbw-agent` ends up inside `elephant.service`'s cgroup and
+   gets killed on every elephant restart (issue 1 below).
+6. `rbw config set email <your-email>`, `rbw login`, then
+   `systemctl --user daemon-reload` and
+   `systemctl --user enable --now rbw-agent.service elephant.service`.
 
 ## Known issues, and why the scripts look the way they do
 
-Three independent bugs that all looked the same from the outside ("after
+Four independent bugs that all looked the same from the outside ("after
 unlocking rbw, search/login stops working"):
 
-### 1. `elephant-bitwarden` permanently returns 0 results after an auto-lock
+### 1. `rbw-agent` inherits `elephant.service`'s cgroup and dies with it
+
+**Symptom:** the master password prompt keeps reappearing. You type the
+correct password, it's rejected, and after a few attempts it finally works —
+with *another* password prompt visible behind the unlocked window.
+
+**Cause:** `rbw-agent` is auto-started on the first `rbw` call and inherits
+the **cgroup of whoever started it**. The first `rbw` call after login is
+usually `rbw list` from the elephant `bitwarden` provider's init, so the agent
+lands in `elephant.service`'s cgroup — which uses the default
+`KillMode=control-group`. Every `systemctl --user restart elephant.service`
+therefore kills `rbw-agent`. Verify with:
+
+```
+systemctl --user status elephant.service   # rbw-agent listed as a child = bug
+cat /proc/$(pgrep -x rbw-agent)/cgroup     # must say rbw-agent.service
+```
+
+The loop: unlock (prompt 1) -> script restarts elephant -> agent killed ->
+vault locked -> new elephant calls `rbw list` -> starts a new, *locked* agent
+-> prompt 2 appears behind the first. No unlock could ever survive. The
+`panicked ... Broken pipe` entries in `~/.local/share/rbw/agent.err` and the
+`ssh_agent_lib ... Listening` line appearing in the same second as an elephant
+restart are symptoms of this, not the cause.
+
+**Fix:** `systemd/rbw-agent.service` gives the agent its own cgroup
+(`Type=forking`, since `rbw-agent` ignores arguments and always daemonizes
+itself). `systemd/elephant.service.d/rbw-agent.conf` adds `Wants=`/`After=`
+so the agent is already running before the provider first calls it —
+otherwise `rbw list` would start it into elephant's cgroup again.
+
+Verified: `rbw-agent`'s PID is identical before and after
+`systemctl --user restart elephant.service`, and only the short-lived
+`rbw list` client remains in elephant's cgroup.
+
+### 2. `elephant-bitwarden` permanently returns 0 results after an auto-lock
 
 `elephant.service` runs persistently in the background, and its `bitwarden`
 provider holds its own connection to `rbw-agent`, established at the moment
@@ -77,13 +119,19 @@ this connection doesn't refresh itself — the static folder menu still works
 (it's regenerated fresh via `rbw list`), but live search permanently reports
 0 results until `elephant.service` is restarted.
 
-**Fix:** `bin/bitwarden-launcher` therefore ALWAYS (not conditionally) calls
-`systemctl --user restart elephant.service` before `exec walker -s bitwarden`
-— the cost is ~1-2s extra on every open, but unconditional restart is
-necessary because "was it locked" can't be reliably detected (the user might
-run `rbw unlock` outside this script too).
+**Fix:** `bin/bitwarden-generate-menus` therefore ALWAYS (not conditionally)
+ends with `systemctl --user restart elephant.service`. It lives there rather
+than in the launcher so that `bin/bitwarden-sync` gets the same behaviour from
+one place. The restart is unconditional because the provider only reads the
+vault once at startup: if it was locked back then it stays permanently empty,
+and a running script can't tell that happened — so making the restart
+conditional on "did we just unlock" does not close the hole.
 
-### 2. `pinentry-gtk` can't unlock the vault on Sway/wlroots
+This costs ~1-2s per open, and it is only harmless because of issue 1 above:
+with `rbw-agent` in its own cgroup the restart no longer locks the vault, so
+it triggers no password prompt.
+
+### 3. `pinentry-gtk` can't unlock the vault on Sway/wlroots
 
 Two independent causes, both fixed by `bin/pinentry-rbw` (the wrapper that
 `"pinentry"` in `rbw config.json` points to):
@@ -102,7 +150,7 @@ Two independent causes, both fixed by `bin/pinentry-rbw` (the wrapper that
   `--display`, always 1 without it). The wrapper filters this flag out and
   additionally sets `GDK_BACKEND=wayland` explicitly.
 
-### 3. The green look (`themes/pinentry-green`)
+### 4. The green look (`themes/pinentry-green`)
 
 Adwaita-dark draws the entry focus ring (`entry:focus`) with a hardcoded blue
 (`box-shadow: ... #15539e`), not through a theme variable

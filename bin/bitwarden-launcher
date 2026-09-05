@@ -9,10 +9,8 @@ set -euo pipefail
 # si ale drží vlastní spojení navázané v okamžiku, kdy byl vault naposledy
 # zamčený, a po znovu-odemčení se samo neobnoví — živé hledání pak natrvalo
 # vrací 0 výsledků, i když `rbw list`/`rbw search` v terminálu fungují.
-# Restart je levný (cca 1-2s, nevyžaduje nové zadání hesla) a dělá ho vždy,
-# ne jen podmíněně — detekce "bylo to zamčené" totiž nepokryje případ, kdy
-# uživatel odemkne ručně (rbw unlock) mimo tento skript.
+# Odemčení i restart elephanta dělá bitwarden-generate-menus samo (ať je to
+# na jednom místě pro launcher i pro bitwarden-sync).
 ~/.local/bin/bitwarden-generate-menus
-systemctl --user restart elephant.service
 
 exec walker -s bitwarden

@@ -6,6 +6,12 @@
 # Volá se před každým otevřením walker -s bitwarden, aby seznam sedněl s aktuálním vaultem.
 set -euo pipefail
 
+# Odemknout explicitně a nahlas. `rbw list --raw` níž si odemčení vyvolá i
+# samo, ale má 2>/dev/null, takže zrušený pinentry by tiše vyrobil PRÁZDNÉ
+# menu místo chyby. Takhle se díky set -e rovnou zastavíme a nerestartujeme
+# elephanta se zamčeným vaultem.
+rbw unlock
+
 MENU_DIR="$HOME/.config/elephant/menus"
 mkdir -p "$MENU_DIR"
 rm -f "$MENU_DIR"/gen-bitwarden-folders.toml "$MENU_DIR"/gen-bitwarden-folder-*.toml "$MENU_DIR"/gen-bitwarden-item-*.toml
@@ -145,3 +151,15 @@ done
 if [[ -n "${folder_body[$NOFOLDER_KEY]+x}" ]]; then
     write_folder_file "gen-bitwarden-folder-nofolder" "No Folder" "${folder_body[$NOFOLDER_KEY]}"
 fi
+
+# Restart je nepodmíněný. elephant-bitwarden si obsah vaultu načte jen jednou
+# při startu providera; když tehdy byl vault zamčený, plugin zůstane natrvalo
+# prázdný ("results=0" u fulltextu, i když složky z menus jdou) a z běžícího
+# skriptu nepoznáme, že se to stalo. Podmiňovat restart tím, že jsme zrovna
+# odemykali, tuhle díru nezavře.
+#
+# Že je restart neškodný, drží rbw-agent.service (~/.config/systemd/user/):
+# agent má vlastní cgroup. Dokud běžel v cgroupu elephant.service (kam ho
+# uložilo implicitní auto-spuštění z pluginu), zabíjel ho tenhle restart přes
+# KillMode=control-group — vault se zamkl a naskočil další pinentry dialog.
+systemctl --user restart elephant.service

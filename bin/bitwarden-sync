@@ -3,7 +3,6 @@ set -euo pipefail
 
 if rbw sync >/dev/null 2>&1; then
     ~/.local/bin/bitwarden-generate-menus
-    systemctl --user restart elephant.service
     notify-send "Bitwarden" "Vault synchronizován"
 else
     notify-send "Bitwarden" "Synchronizace selhala"
