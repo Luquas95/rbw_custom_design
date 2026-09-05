@@ -1,5 +1,11 @@
 # rbw_custom_design
 
+[![Release](https://img.shields.io/github/v/release/Luquas95/rbw_custom_design)](https://github.com/Luquas95/rbw_custom_design/releases)
+[![Platform](https://img.shields.io/badge/platform-Sway%20%2F%20wlroots-blue?logo=linux&logoColor=white)](https://swaywm.org/)
+[![Shell](https://img.shields.io/badge/language-bash-green)](https://www.gnu.org/software/bash/)
+[![License](https://img.shields.io/badge/license-MIT-yellow)](https://opensource.org/license/MIT)
+[![Stars](https://img.shields.io/github/stars/Luquas95/rbw_custom_design?style=social)](https://github.com/Luquas95/rbw_custom_design)
+
 A custom Bitwarden menu built on top of [`rbw`](https://github.com/doy/rbw) (the
 unofficial Bitwarden CLI) for Sway/wlroots, using
 [`walker`](https://github.com/abenz1267/walker) +
