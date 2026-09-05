@@ -31,6 +31,11 @@ write_item_actions_menu() {
         echo 'icon = "bitwarden"'
         echo "parent = \"$parent_menu\""
         echo "action = \"bitwarden-menu-copy $id %VALUE%\""
+        # Bez fixed_order si menus provider drží entries v mapě a vydává je
+        # v pořadí iterace mapy (Go = náhodné při každém načtení souboru).
+        # Launcher elephanta restartuje při každém otevření, takže "Kopírovat
+        # heslo" pokaždé skončilo jinde. S fixed_order platí pořadí z TOML.
+        echo 'fixed_order = true'
         echo
         echo '[[entries]]'
         echo 'text = "Kopírovat heslo"'
@@ -66,6 +71,11 @@ write_folder_file() {
         echo "name_pretty = \"$title\""
         echo 'icon = "folder"'
         echo 'parent = "bitwarden-folders"'
+        # Stejný důvod jako u write_item_actions_menu: bez fixed_order vydává
+        # menus provider entries v pořadí iterace mapy (náhodné při každém
+        # načtení). Položky ve složce jsou sem přidávané už seřazené podle
+        # názvu (viz sort_by v jq níž), fixed_order to pořadí zachová.
+        echo 'fixed_order = true'
         printf '%s\n' "$body"
     } > "$MENU_DIR/$menu_name.toml"
 }
@@ -100,7 +110,7 @@ while IFS=$'\x1f' read -r folder id name user; do
     [[ -z "$bkey" ]] && bkey="$NOFOLDER_KEY"
     folder_body["$bkey"]+=$(printf '\n[[entries]]\ntext = "%s"\nicon = "bitwarden"\nsubmenu = "gen-bitwarden-item-%s"\n' "$label" "$id")
     write_item_actions_menu "$id" "$label" "$FOLDER_MENU_NAME"
-done < <(printf '%s' "$raw" | jq -r '.[] | [(.folder // "" | gsub("^\\s+|\\s+$";"")), .id, .name, (.user // "")] | join("")')
+done < <(printf '%s' "$raw" | jq -r 'sort_by((.name // "" | ascii_downcase), (.user // "" | ascii_downcase)) | .[] | [(.folder // "" | gsub("^\\s+|\\s+$";"")), .id, .name, (.user // "")] | join("")')
 
 {
     echo 'name = "bitwarden-folders"'
