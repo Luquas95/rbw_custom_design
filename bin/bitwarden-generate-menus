@@ -30,7 +30,17 @@ write_item_actions_menu() {
         echo "name_pretty = \"$label\""
         echo 'icon = "bitwarden"'
         echo "parent = \"$parent_menu\""
-        echo "action = \"bitwarden-menu-copy $id %VALUE%\""
+        # systemd-run --scope: bez toho běží bitwarden-menu-copy (a jeho
+        # potomci jako wl-copy nebo bitwarden-generate-menus) uvnitř cgroupu
+        # elephant.service (proces zdědí cgroup toho, kdo ho spustil - stejný
+        # mechanismus jako u rbw-agenta). KillMode=control-group pak
+        # jakýkoli "systemctl --user restart elephant.service" spuštěný
+        # odsud (edit/delete volají bitwarden-generate-menus, ta na konci
+        # restartuje elephanta) zabije celou vlastní skupinu i s právě
+        # zkopírovaným heslem ve wl-copy. --scope přesune proces do
+        # vlastního scope mimo elephantův cgroup, takže restart už nic
+        # neubije. Ověřeno: bez toho wl-paste po restartu vrátí prázdno.
+        echo "action = \"systemd-run --user --scope --quiet -- bitwarden-menu-copy $id %VALUE%\""
         # Bez fixed_order si menus provider drží entries v mapě a vydává je
         # v pořadí iterace mapy (Go = náhodné při každém načtení souboru).
         # Launcher elephanta restartuje při každém otevření, takže "Kopírovat
@@ -116,7 +126,11 @@ done < <(printf '%s' "$raw" | jq -r 'sort_by((.name // "" | ascii_downcase), (.u
     echo 'name = "bitwarden-folders"'
     echo 'name_pretty = "Bitwarden"'
     echo 'icon = "bitwarden"'
-    echo 'action = "%VALUE%"'
+    # Stejný důvod jako u write_item_actions_menu níže: bitwarden-add i
+    # bitwarden-sync volají bitwarden-generate-menus, která restartuje
+    # elephanta - bez --scope by to zabilo vlastní běžící skript (a nově
+    # zkopírované heslo ve wl-copy) uprostřed běhu.
+    echo 'action = "systemd-run --user --scope --quiet -- %VALUE%"'
     echo 'fixed_order = true'
     echo
     echo '[[entries]]'
