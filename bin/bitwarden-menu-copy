@@ -22,13 +22,13 @@ case "$field" in
         if [[ -z "$user" ]]; then
             notify-send "Bitwarden" "Tato položka nemá username"
         else
-            printf '%s' "$user" | wl-copy
+            printf '%s' "$user" | wl-copy --sensitive --
             notify-send "Bitwarden" "Username zkopírován"
         fi
         ;;
     totp)
         if code=$(rbw code "$id" 2>/dev/null); then
-            printf '%s' "$code" | wl-copy
+            printf '%s' "$code" | wl-copy --sensitive --
             notify-send "Bitwarden" "TOTP kód zkopírován"
         else
             notify-send "Bitwarden" "Tato položka nemá TOTP"
