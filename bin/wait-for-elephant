@@ -1,0 +1,10 @@
+#!/bin/bash
+# Počká, až elephant opravdu odpovídá na dotazy menu (max ~15 s). Walker, který
+# nastartuje dřív, než má elephant načtené providery, spadne (SIGABRT) na
+# "failed to get item layout". Vždy končí úspěchem, ať walker nastartuje i tak.
+for _ in $(seq 1 75); do
+    elephant query --json "menus:appcategories;;1" 2>/dev/null | grep -q '"item"' && break
+    sleep 0.2
+done
+sleep 1
+exit 0

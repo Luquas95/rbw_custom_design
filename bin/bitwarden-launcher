@@ -13,4 +13,18 @@ set -euo pipefail
 # na jednom místě pro launcher i pro bitwarden-sync).
 ~/.local/bin/bitwarden-generate-menus
 
+# bitwarden-generate-menus právě restartovalo elephanta (a přes Requires= i
+# walker.service). Když walker dostane dotaz dřív, než elephant načte menu,
+# spadne na "failed to get item layout: menus:bitwarden-folders" a okno se
+# vůbec neotevře. Proto počkat, až elephant menu opravdu vrací (max ~10 s).
+for _ in $(seq 1 50); do
+    elephant query --json "menus:bitwarden-folders;;1" 2>/dev/null | grep -q '"item"' && break
+    sleep 0.2
+done
+for _ in $(seq 1 50); do
+    systemctl --user is-active --quiet walker.service && break
+    sleep 0.2
+done
+sleep 0.5
+
 exec walker -s bitwarden
