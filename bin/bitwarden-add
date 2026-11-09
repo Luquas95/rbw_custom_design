@@ -35,7 +35,7 @@ if [[ "$method" == "Zadat vlastní heslo" ]]; then
     fi
 
     if err=$(BW_CUSTOM_PASSWORD="$pass1" EDITOR="$HOME/.local/bin/.bitwarden-editor-fill" rbw add "${rbw_args[@]}" 2>&1 </dev/null); then
-        printf '%s' "$pass1" | wl-copy
+        printf '%s' "$pass1" | wl-copy --sensitive --
         notify-send "Bitwarden" "Položka '$name' vytvořena, heslo zkopírováno do schránky"
         ~/.local/bin/bitwarden-generate-menus
         systemctl --user restart elephant.service
@@ -47,7 +47,7 @@ else
     bw_prompt_generate_args || { notify-send "Bitwarden" "Zrušeno"; exit 0; }
 
     if password=$(rbw generate "${BW_GEN_ARGS[@]}" "${rbw_args[@]}" 2>&1 </dev/null); then
-        printf '%s' "$password" | wl-copy
+        printf '%s' "$password" | wl-copy --sensitive --
         notify-send "Bitwarden" "Položka '$name' vytvořena, heslo zkopírováno do schránky"
         ~/.local/bin/bitwarden-generate-menus
         systemctl --user restart elephant.service

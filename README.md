@@ -163,7 +163,8 @@ the system.
 
 ## What's deliberately NOT in this repo
 
-The generated `~/.config/elephant/menus/gen-bitwarden-*.toml` files (contain
+The generated `gen-bitwarden-*.toml` menu files (written to tmpfs under
+`$XDG_RUNTIME_DIR/bitwarden-xdg/elephant/menus/`, never to disk; they contain
 real entry/folder names from the vault) and `~/.config/rbw/config.json` with
 a real email — both are runtime/personal state, not code. The screenshot
 above was captured with temporary fake menu data on an otherwise empty

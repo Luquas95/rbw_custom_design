@@ -1,6 +1,6 @@
 #!/bin/bash
 # Generuje elephant "menus" soubory pro idle pohled Bitwarden walker setu:
-# ~/.config/elephant/menus/gen-bitwarden-folders.toml (kořen: Sync/Generovat/Přidat napevno nahoře + složky)
+# $XDG_RUNTIME_DIR/bitwarden-xdg/elephant/menus/gen-bitwarden-folders.toml (kořen: Sync/Generovat/Přidat napevno nahoře + složky)
 # + gen-bitwarden-folder-<slug>.toml na složku (položky, submenu na akce)
 # + gen-bitwarden-item-<id>.toml na položku (Kopírovat heslo/username/TOTP/Upravit/Smazat).
 # Volá se před každým otevřením walker -s bitwarden, aby seznam sedněl s aktuálním vaultem.
@@ -12,9 +12,18 @@ set -euo pipefail
 # elephanta se zamčeným vaultem.
 rbw unlock
 
-MENU_DIR="$HOME/.config/elephant/menus"
+umask 077  # názvy a ID položek trezoru nesmí být čitelné pro ostatní
+# Menu se zapisují jen na tmpfs ($XDG_RUNTIME_DIR, tedy RAM, nikdy na disk) -
+# názvy složek a UUID položek by jinak zůstaly v názvech souborů i obsahu na
+# disku. Elephant je najde přes XDG_CONFIG_DIRS, které mu nastavuje drop-in
+# ~/.config/systemd/user/elephant.service.d/tmpfs-menus.conf (musí ukazovat
+# na stejnou cestu).
+MENU_DIR="${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR není nastaveno}/bitwarden-xdg/elephant/menus"
 mkdir -p "$MENU_DIR"
+chmod 700 "$MENU_DIR"
 rm -f "$MENU_DIR"/gen-bitwarden-folders.toml "$MENU_DIR"/gen-bitwarden-folder-*.toml "$MENU_DIR"/gen-bitwarden-item-*.toml
+# Zbytky z doby, kdy se menu psala do ~/.config (jinak by je elephant načetl podruhé).
+rm -f "$HOME/.config/elephant/menus"/gen-bitwarden-*.toml
 
 raw=$(rbw list --fields id,name,user,folder --raw 2>/dev/null)
 
