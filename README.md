@@ -29,7 +29,10 @@ $mod+b (Sway)
                                           elephant.service — see "Known issues")
        -> walker -s bitwarden
             - empty field  = static menu (folders, generated above)
-            - typing       = live search via the elephant-bitwarden provider
+            - typing       = fuzzy search in the flat `bitwarden-all` menu (also
+                             generated above), so Enter on a hit opens the same
+                             per-entry submenu (copy password/username/TOTP,
+                             edit, delete) as in the folder view
 ```
 
 Actions on an entry (copy password/username/TOTP, edit, delete) call
@@ -66,7 +69,18 @@ Kept for reference/completeness.
    `~/.config/systemd/user/elephant.service.d/`. **Don't skip this** — without
    its own unit, `rbw-agent` ends up inside `elephant.service`'s cgroup and
    gets killed on every elephant restart (issue 1 below).
-6. `rbw config set email <your-email>`, `rbw login`, then
+6. In `~/.config/walker/config.toml`, make typing search the flat menu:
+
+   ```toml
+   [providers.sets.bitwarden]
+   default = ["menus:bitwarden-all"]
+   empty = ["menus:bitwarden-folders"]
+   ```
+
+   (Pointing `default` at the `bitwarden` provider instead gives search
+   results without the submenu: Enter on a hit does nothing unless you bind
+   it to a provider action yourself.)
+7. `rbw config set email <your-email>`, `rbw login`, then
    `systemctl --user daemon-reload` and
    `systemctl --user enable --now rbw-agent.service elephant.service`.
 
@@ -111,6 +125,10 @@ Verified: `rbw-agent`'s PID is identical before and after
 `rbw list` client remains in elephant's cgroup.
 
 ### 2. `elephant-bitwarden` permanently returns 0 results after an auto-lock
+
+(Search no longer goes through this provider — it uses the generated
+`bitwarden-all` menu — but the provider is still loaded by elephant and the
+unconditional restart below is kept so it never sits on a stale vault.)
 
 `elephant.service` runs persistently in the background, and its `bitwarden`
 provider holds its own connection to `rbw-agent`, established at the moment

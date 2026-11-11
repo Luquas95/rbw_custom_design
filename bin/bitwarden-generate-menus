@@ -21,7 +21,7 @@ umask 077  # názvy a ID položek trezoru nesmí být čitelné pro ostatní
 MENU_DIR="${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR není nastaveno}/bitwarden-xdg/elephant/menus"
 mkdir -p "$MENU_DIR"
 chmod 700 "$MENU_DIR"
-rm -f "$MENU_DIR"/gen-bitwarden-folders.toml "$MENU_DIR"/gen-bitwarden-folder-*.toml "$MENU_DIR"/gen-bitwarden-item-*.toml
+rm -f "$MENU_DIR"/gen-bitwarden-folders.toml "$MENU_DIR"/gen-bitwarden-all.toml "$MENU_DIR"/gen-bitwarden-folder-*.toml "$MENU_DIR"/gen-bitwarden-item-*.toml
 # Zbytky z doby, kdy se menu psala do ~/.config (jinak by je elephant načetl podruhé).
 rm -f "$HOME/.config/elephant/menus"/gen-bitwarden-*.toml
 
@@ -58,17 +58,17 @@ write_item_actions_menu() {
         echo
         echo '[[entries]]'
         echo 'text = "Kopírovat heslo"'
-        echo 'icon = "bitwarden"'
+        echo 'icon = "dialog-password"'
         echo 'value = "password"'
         echo
         echo '[[entries]]'
         echo 'text = "Kopírovat uživatelské jméno"'
-        echo 'icon = "bitwarden"'
+        echo 'icon = "avatar-default"'
         echo 'value = "username"'
         echo
         echo '[[entries]]'
         echo 'text = "Kopírovat TOTP"'
-        echo 'icon = "bitwarden"'
+        echo 'icon = "system-lock-screen"'
         echo 'value = "totp"'
         echo
         echo '[[entries]]'
@@ -100,6 +100,9 @@ write_folder_file() {
 }
 
 declare -A folder_body folder_slug
+# Ploché menu všech položek: hledání ve walkeru (psaní do pole) hledá tady, takže Enter
+# na nalezené položce otevře stejnou podnabídku s ikonami jako ve složce.
+all_body=""
 NOFOLDER_KEY="__nofolder__"
 
 # Nastaví FOLDER_MENU_NAME pro danou složku; slug (fork iconv) počítá jen jednou na složku.
@@ -128,6 +131,7 @@ while IFS=$'\x1f' read -r folder id name user; do
     bkey="$folder"
     [[ -z "$bkey" ]] && bkey="$NOFOLDER_KEY"
     folder_body["$bkey"]+=$(printf '\n[[entries]]\ntext = "%s"\nicon = "bitwarden"\nsubmenu = "gen-bitwarden-item-%s"\n' "$label" "$id")
+    all_body+=$(printf '\n[[entries]]\ntext = "%s"\nicon = "bitwarden"\nsubmenu = "gen-bitwarden-item-%s"\n' "$label" "$id")
     write_item_actions_menu "$id" "$label" "$FOLDER_MENU_NAME"
 done < <(printf '%s' "$raw" | jq -r 'sort_by((.name // "" | ascii_downcase), (.user // "" | ascii_downcase)) | .[] | [(.folder // "" | gsub("^\\s+|\\s+$";"")), .id, .name, (.user // "")] | join("")')
 
@@ -184,6 +188,14 @@ done
 if [[ -n "${folder_body[$NOFOLDER_KEY]+x}" ]]; then
     write_folder_file "gen-bitwarden-folder-nofolder" "No Folder" "${folder_body[$NOFOLDER_KEY]}"
 fi
+
+{
+    echo 'name = "bitwarden-all"'
+    echo 'name_pretty = "Bitwarden"'
+    echo 'icon = "bitwarden"'
+    echo 'fixed_order = true'
+    printf '%s\n' "$all_body"
+} > "$MENU_DIR/gen-bitwarden-all.toml"
 
 # Restart je nepodmíněný. elephant-bitwarden si obsah vaultu načte jen jednou
 # při startu providera; když tehdy byl vault zamčený, plugin zůstane natrvalo
