@@ -57,14 +57,14 @@ write_item_actions_menu() {
         echo 'fixed_order = true'
         echo
         echo '[[entries]]'
-        echo 'text = "Kopírovat heslo"'
-        echo 'icon = "dialog-password"'
-        echo 'value = "password"'
-        echo
-        echo '[[entries]]'
         echo 'text = "Kopírovat uživatelské jméno"'
         echo 'icon = "avatar-default"'
         echo 'value = "username"'
+        echo
+        echo '[[entries]]'
+        echo 'text = "Kopírovat heslo"'
+        echo 'icon = "dialog-password"'
+        echo 'value = "password"'
         echo
         echo '[[entries]]'
         echo 'text = "Kopírovat TOTP"'

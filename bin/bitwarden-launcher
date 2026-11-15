@@ -21,6 +21,13 @@ for _ in $(seq 1 50); do
     elephant query --json "menus:bitwarden-folders;;1" 2>/dev/null | grep -q '"item"' && break
     sleep 0.2
 done
+# Když walker.service jednou spadne na start-limit-hit (např. při restartech
+# elephanta během pacman updatu), zůstane "failed" a sám už nenaběhne. Pak
+# by `walker -s bitwarden` níž běžel jako samostatný proces bez
+# XDG_CONFIG_DIRS pro tmpfs menu a padal na "failed to get item layout"
+# (okno jen problikne). Proto ho případně oživit.
+systemctl --user reset-failed walker.service 2>/dev/null || true
+systemctl --user start walker.service 2>/dev/null || true
 for _ in $(seq 1 50); do
     systemctl --user is-active --quiet walker.service && break
     sleep 0.2
